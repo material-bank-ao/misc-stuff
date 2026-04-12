@@ -1,0 +1,96 @@
+using Sandbox;
+
+public sealed class Car : Component
+{
+	[Header("References")]
+	[Property] public Rigidbody rigidbody { get; set; }
+
+	[Space]
+	[Header("Car Settings")]
+	[Property] public float driftFactor { get; set; } = 0.95f;
+	[Property] public float accelerationFactor { get; set; } = 30f;
+	[Property] public float turnFactor { get; set; } = 3.5f;
+	[Property] public float turnSnappyness { get; set; } = 0.8f;
+	[Property] public float maxSpeed { get; set; } = 20f;
+
+	private int accelerationInput;
+	private int steeringInput;
+
+	private float rotationAngle;
+
+	private float velocityVsForward = 0;
+
+	protected override void OnFixedUpdate()
+	{
+		ApplyEngineForce();
+		KillOrthogonalVelocity();
+		ApplySteering();
+	}
+
+	private void ApplyEngineForce()
+	{
+		//calculate how much forward velocity we have
+		velocityVsForward = Vector2.Dot(WorldRotation.Forward, rigidbody.Velocity);
+
+		//limit forward velocity
+		if(velocityVsForward > maxSpeed && accelerationInput > 0)
+		{
+			return;
+		}
+
+		//limit backwards velocity
+		if(velocityVsForward < -maxSpeed * 0.5f && accelerationInput < 0)
+		{
+			return;
+		}
+
+		//limit any other directional velocity
+		if(rigidbody.Velocity.LengthSquared > maxSpeed * maxSpeed && accelerationInput > 0)
+		{
+			return;
+		}
+
+		//apply drag if there is no input so the car stops
+		if (accelerationInput == 0)
+		{
+			rigidbody.LinearDamping = MathX.Lerp(rigidbody.LinearDamping, 3.0f, Time.Delta * 3f);
+		}
+		else
+		{
+			rigidbody.LinearDamping = 0f;
+		}
+
+		//create a force for the engine
+		Vector2 engineForceVector = WorldRotation.Forward * accelerationInput * accelerationFactor;
+
+		//apply engine force
+		rigidbody.ApplyForce(engineForceVector);
+	}
+
+	private void ApplySteering()
+	{
+		//limit turning ability when moving slowly
+		float minSpeedBeforeAllowTurningFactor = (rigidbody.Velocity.Length / 8);
+		minSpeedBeforeAllowTurningFactor = MathX.Clamp(minSpeedBeforeAllowTurningFactor, 0, 1);
+
+		//update rotation based on input
+		rotationAngle -= steeringInput * turnFactor * minSpeedBeforeAllowTurningFactor;
+
+		//apply steering
+		rigidbody.SmoothRotate(Rotation.FromYaw(rotationAngle), turnSnappyness, Time.Delta);
+	}
+
+	private void KillOrthogonalVelocity()
+	{
+		Vector2 forwardVelocity = WorldRotation.Forward * Vector2.Dot(rigidbody.Velocity, WorldRotation.Forward);
+		Vector2 sidewaysVelocity = WorldRotation.Right * Vector2.Dot(rigidbody.Velocity, WorldRotation.Right);
+
+		rigidbody.Velocity = forwardVelocity + sidewaysVelocity * driftFactor;
+	}
+
+	public void SetInputVector(Vector2Int inputVector)
+	{
+		steeringInput = (int)MathX.Clamp(inputVector.x, -1, 1);
+		accelerationInput = (int)MathX.Clamp(inputVector.y, -1, 1);
+	}
+}
